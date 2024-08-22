@@ -9,41 +9,45 @@ public class PlayerController : MonoBehaviour
     public float jumpForce = 5f;
     public float lookSensitivity = 2f;
     public float maxLookAngle = 80f;
-    public bool sprintToggle = false;  // True: toggle mode, False: hold to sprint
+    public bool sprintToggle = false;
 
-    private Rigidbody rb;
+    private IMovable _movable;
+    private IJumpable _jumpable;
+    private IRotatable _rotatable;
+    private PlayerMovement _playerMovement;
+
     private Vector2 moveInput;
-    private Vector2 lookInput;
-    private Transform cameraTransform;
-    private float currentXRotation = 0f;
-    private bool isGrounded;
-    private bool isSprinting;
     private bool sprintInputActive;
 
     private void Awake()
     {
-        rb = GetComponent<Rigidbody>();
-        cameraTransform = Camera.main.transform;
+        var rb = GetComponent<Rigidbody>();
+        var cameraTransform = Camera.main.transform;
 
-        // Lock the cursor for better control
+        _playerMovement = new PlayerMovement(rb, moveSpeed, sprintSpeed, jumpForce);
+        _movable = _playerMovement;
+        _jumpable = _playerMovement;
+        _rotatable = new PlayerRotation(transform, cameraTransform, lookSensitivity, maxLookAngle);
+
         Cursor.lockState = CursorLockMode.Locked;
     }
 
     public void OnMove(InputAction.CallbackContext context)
     {
+        // Store move input to be used in FixedUpdate
         moveInput = context.ReadValue<Vector2>();
     }
 
     public void OnLook(InputAction.CallbackContext context)
     {
-        lookInput = context.ReadValue<Vector2>();
+        _rotatable.Rotate(context.ReadValue<Vector2>());
     }
 
     public void OnJump(InputAction.CallbackContext context)
     {
-        if (context.performed && isGrounded)
+        if (context.performed)
         {
-            rb.AddForce(Vector3.up * jumpForce, ForceMode.Impulse);
+            _jumpable.Jump();
         }
     }
 
@@ -51,43 +55,24 @@ public class PlayerController : MonoBehaviour
     {
         if (sprintToggle)
         {
-            // Toggle mode
             if (context.performed)
             {
-                isSprinting = !isSprinting;
+                // Toggle sprint state
+                _playerMovement.SetSprinting(!_playerMovement.IsSprinting);
             }
         }
         else
         {
-            // Hold mode
+            // Set sprint state based on input
             sprintInputActive = context.ReadValueAsButton();
-            isSprinting = sprintInputActive;
+            _playerMovement.SetSprinting(sprintInputActive);
         }
     }
 
     private void FixedUpdate()
     {
-        // Check if the player is on the ground
-        isGrounded = Physics.Raycast(transform.position, Vector3.down, 1.1f);
-
-        // Determine movement speed based on sprint status
-        float currentSpeed = isSprinting ? sprintSpeed : moveSpeed;
-
-        // Move the player in the local Z axis
-        Vector3 moveDirection = transform.forward * moveInput.y + transform.right * moveInput.x;
-        rb.MovePosition(rb.position + moveDirection * currentSpeed * Time.fixedDeltaTime);
-    }
-
-    private void Update()
-    {
-        // Rotate the player horizontally (Y axis)
-        float yRotation = lookInput.x * lookSensitivity;
-        transform.Rotate(Vector3.up * yRotation);
-
-        // Rotate the camera vertically (X axis)
-        currentXRotation -= lookInput.y * lookSensitivity;
-        currentXRotation = Mathf.Clamp(currentXRotation, -maxLookAngle, maxLookAngle);
-
-        cameraTransform.localRotation = Quaternion.Euler(currentXRotation, 0f, 0f);
+        // Apply movement based on the current input and sprint state
+        _movable.Move(moveInput);
+        _playerMovement.ApplyGravity();
     }
 }
